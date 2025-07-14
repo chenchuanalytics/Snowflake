@@ -1,0 +1,91 @@
+CREATE OR REPLACE TABLE customers (
+    customer_id   INT,
+    first_name    VARCHAR(50),
+    last_name     VARCHAR(50),
+    email         VARCHAR(100),
+    city          VARCHAR(50),
+    created_at    TIMESTAMP
+);
+
+
+INSERT INTO customers (customer_id, first_name, last_name, email, city, created_at)
+VALUES 
+    (1, 'Vishal', 'kaushal', 'vish.kaus@example.com', 'Agra', CURRENT_TIMESTAMP),
+    (2, 'Sachin', 'Mittal', 'sach.vish@example.com', 'Chennai', CURRENT_TIMESTAMP),
+    (3, 'Anil', 'Reddy', 'anil.reddy@example.com', 'Bangalore', CURRENT_TIMESTAMP);
+
+
+
+    //Cloning a Table
+
+
+    CREATE OR REPLACE TABLE bootcamp.public.customers_clone
+    CLONE bootcamp.public.customers;
+
+
+    SELECT * FROM bootcamp.public.customers;
+    SELECT * FROM bootcamp.public.customers_clone;
+
+    
+-----------------------------------------------------------------------------------------------------------
+
+//Cloning Schema
+
+
+CREATE SCHEMA bootcamp.file_formats;
+
+    CREATE SCHEMA bootcamp.copy_of_file_format
+    CLONE bootcamp.file_formats;
+
+--------------------------------------------------------------------------------------------------------------
+
+//Cloning database
+
+CREATE DATABASE bootcamp_copy
+CLONE bootcamp;
+
+
+------------------------------------------------------------------------------------------------
+
+//Update data in source and cloned objects and observe both the tables
+
+UPDATE bootcamp.public.customers SET FIRST_NAME = 'Chenchu' WHERE  CUSTOMER_ID = 3
+SELECT * FROM bootcamp.public.customers WHERE CUSTOMER_ID =3;
+
+
+    
+SELECT * FROM bootcamp.public.customers_clone WHERE CUSTOMER_ID =3;
+
+---------------------------------------------------------------------------------------------------------
+
+SELECT * FROM bootcamp.public.customers_clone WHERE CUSTOMER_ID =2;
+UPDATE bootcamp.public.customers_clone SET FIRST_NAME = 'Pradeep' WHERE  CUSTOMER_ID = 2;
+    
+SELECT * FROM bootcamp.public.customers WHERE CUSTOMER_ID =2;
+
+
+------------------------------------------------------------------------------------------------------------
+
+//Dropping cloned objects
+
+DROP DATABASE bootcamp_copy;
+DROP TABLE  bootcamp.public.customers_clone;
+DROP SCHEMA bootcamp.copy_of_file_format;
+
+
+------------------------------------------------------------------------------------------------------
+
+    
+
+    DELETE FROM bootcamp.public.customers;
+    SELECT * FROM bootcamp.public.customers;
+
+
+
+    CREATE OR REPLACE TABLE bootcamp.public.customers_tt_clone
+    CLONE bootcamp.public.customers at (OFFSET => -60*15);
+
+
+
+
+     SELECT * FROM bootcamp.public.customers_tt_clone;
