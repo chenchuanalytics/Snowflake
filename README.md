@@ -1,1 +1,1 @@
-This Repository is for Snowflake Code which I Post in Linkedin
+This Repository is for Snowflake Code 
