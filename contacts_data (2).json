@@ -1,0 +1,39 @@
+[
+  {
+    "Name": "Anil Kumar",
+    "Gender": "Male",
+    "DOB": "1994-10-19",
+    "Skills": [
+      "PySpark",
+      "Databricks",
+      "Snowflake"
+    ],
+    "Address": {
+      "House Number": "123",
+      "City": "Hyderabad",
+      "State": "Telangana"
+    },
+    "Phone": {
+      "Work": 96757,
+      "Mobile": 12345674
+    }
+  },
+  {
+    "Name": "Priya Sharma",
+    "Gender": "Female",
+    "DOB": "1992-07-08",
+    "Skills": [
+      "ADF",
+      "PBI"
+    ],
+    "Address": {
+      "House Number": "45-B",
+      "City": "Bangalore",
+      "State": "Karnataka"
+    },
+    "Phone": {
+      "Work": 91534578,
+      "Mobile": 2351678954
+    }
+  }
+]
