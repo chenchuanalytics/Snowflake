@@ -1,0 +1,122 @@
+CREATE ROLE SALES_USERS;
+CREATE ROLE SALES_ADMIN;
+CREATE ROLE MARKET_USERS;
+CREATE ROLE MARKET_ADMIN;
+
+SHOW ROLES;
+
+SELECT CURRENT_USER();
+
+
+-- Grant the SALES_USERS role to your user
+GRANT ROLE SALES_USERS TO USER KICCHA;
+GRANT ROLE SALES_ADMIN TO USER KICCHA;
+GRANT ROLE MARKET_USERS TO USER KICCHA;
+GRANT ROLE MARKET_ADMIN TO USER KICCHA;
+
+-------------------------------------------------------------------------------------
+
+
+
+
+
+//Create a schema for policies
+CREATE SCHEMA MYPOLICIES ;
+
+
+//Create a sample table
+CREATE TABLE MYPOLICIES.CUSTOMER
+AS SELECT * FROM SNOWFLAKE_SAMPLE_DATA.TPCH_SF1.CUSTOMER;
+
+SELECT * FROM MYPOLICIES.CUSTOMER;
+
+// Grant access to other roles
+GRANT USAGE ON DATABASE BOOTCAMP TO ROLE sales_users;
+GRANT USAGE ON SCHEMA BOOTCAMP.mypolicies TO ROLE sales_users;
+GRANT SELECT ON TABLE BOOTCAMP.mypolicies.CUSTOMER TO ROLE sales_users;
+
+GRANT USAGE ON DATABASE BOOTCAMP TO ROLE sales_admin;
+GRANT USAGE ON SCHEMA BOOTCAMP.mypolicies TO ROLE sales_admin;
+GRANT SELECT ON TABLE BOOTCAMP.mypolicies.CUSTOMER TO ROLE sales_admin;
+
+GRANT USAGE ON DATABASE BOOTCAMP TO ROLE market_users;
+GRANT USAGE ON SCHEMA BOOTCAMP.mypolicies TO ROLE market_users;
+GRANT SELECT ON TABLE BOOTCAMP.mypolicies.CUSTOMER TO ROLE market_users;
+
+GRANT USAGE ON DATABASE BOOTCAMP TO ROLE market_admin;
+GRANT USAGE ON SCHEMA BOOTCAMP.mypolicies TO ROLE market_admin;
+GRANT SELECT ON TABLE BOOTCAMP.mypolicies.CUSTOMER TO ROLE market_admin;
+
+======================
+
+// Want to Hide Phone and Account Balance
+CREATE OR REPLACE MASKING POLICY customer_phone 
+    as (val string) returns string->
+CASE WHEN CURRENT_ROLE() in ('SALES_ADMIN', 'MARKET_ADMIN') THEN val
+    ELSE '##-###-###-'||SUBSTRING(val,12,4) 
+    END;
+
+ 
+    
+
+    
+CREATE OR REPLACE MASKING POLICY customer_accbal2
+    as (val number) returns number->
+CASE WHEN CURRENT_ROLE() in ('SALES_ADMIN', 'MARKET_ADMIN') THEN val
+    ELSE 0 
+    END;
+    
+
+// Apply masking policies on columns of CUSTOMER table
+ALTER TABLE MYPOLICIES.CUSTOMER MODIFY COLUMN C_PHONE
+    SET MASKING POLICY customer_phone;
+
+
+// Altering policies
+    
+ALTER MASKING POLICY customer_phone SET body ->
+CASE WHEN CURRENT_ROLE() in ('SALES_ADMIN', 'MARKET_ADMIN') THEN val
+    ELSE '##########' 
+    END;
+    
+    
+ALTER TABLE MYPOLICIES.CUSTOMER MODIFY COLUMN C_ACCTBAL
+    SET MASKING POLICY customer_accbal2;
+    
+
+// switch to sales_users and see the data
+USE ROLE sales_users;
+
+
+SELECT * FROM MYPOLICIES.CUSTOMER;
+    
+    
+// switch to sales_admin and see the data
+USE ROLE sales_admin;
+
+
+
+SELECT * FROM MYPOLICIES.CUSTOMER;
+
+// To see masking policies
+USE ROLE SYSADMIN;
+
+
+
+SHOW MASKING POLICIES;
+
+DESC MASKING POLICY CUSTOMER_PHONE;
+
+// To see wherever you applied the policy
+
+SELECT * FROM table(information_schema.policy_references(policy_name=>'CUSTOMER_PHONE'));
+
+
+
+// Dropping masking policies
+
+ALTER TABLE MYPOLICIES.CUSTOMER 
+MODIFY COLUMN C_ACCTBAL
+UNSET MASKING POLICY;  
+    
+DROP MASKING POLICY customer_accbal2;
