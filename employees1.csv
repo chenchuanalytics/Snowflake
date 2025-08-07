@@ -1,0 +1,7 @@
+EMPID,EMPNAME,SALARY,AGE,DEPT,LOCATION
+1,Shiva,80000,35,SALES,Bangalore
+2,Pradeep,45000,26,SALES,Hyderabad
+3,Vinay,76000,34,TECHNOLOGY,Chennai
+4,Shilpa,52000,28,HR,Hyderabad
+5,Karthik,24500,22,TECHNOLOGY,Bangalore
+6,Irfan,42000,27,HR,Chennai
