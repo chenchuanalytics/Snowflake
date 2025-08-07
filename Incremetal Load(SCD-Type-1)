@@ -1,0 +1,141 @@
+//Create Database & Schema
+
+USE DATABASE ecomproject;
+USE SCHEMA ecomproject.sales;
+
+--------------------------------------------------------------------------
+
+//Create File Format
+
+CREATE OR REPLACE FILE FORMAT csv_format_employees
+TYPE = 'CSV'
+FIELD_DELIMITER = ','
+SKIP_HEADER = 1
+FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+empty_field_as_null = TRUE
+NULL_IF = ('\\N', 'NULL', '')
+ENCODING = 'UTF8';
+-----------------------------------------------------------------------------
+
+//Create Storage Integration object
+
+CREATE OR REPLACE STORAGE INTEGRATION S3_integration
+TYPE = EXTERNAL_STAGE
+ENABLED=TRUE
+STORAGE_PROVIDER = 'S3'
+STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::311410995815:role/aws_s3_snowflake_intg'
+STORAGE_ALLOWED_LOCATIONS = ('s3://e-commerce-project-id-01/Bronze','s3://e-commerce-project-id-01/silver'); 
+------------------------------------------------------------------------------
+
+//Create External Stage object using storage integration object
+
+CREATE OR REPLACE STAGE  ecomproject.sales.external_stages
+STORAGE_INTEGRATION = S3_integration
+URL = 's3://e-commerce-project-id-01/Bronze'
+FILE_FORMAT = csv_format_employees;
+----------------------------------------------------------------------------
+
+list @external_stages;
+
+
+LIST @ecomproject.sales.external_stages;
+
+-------------------------------------------------------------------------
+
+//Create Raw/Bronze Table 
+
+CREATE OR REPLACE TABLE ecomproject.sales.employees_raw 
+( EMPID INT,
+  EMPNAME VARCHAR(30),
+  SALARY FLOAT,
+  AGE INT,
+  DEPT VARCHAR(15),
+  LOCATION VARCHAR(20)
+);
+
+------------------------------------------------------------------------------------
+//Create SnowPipe for Auto loading
+
+CREATE OR REPLACE PIPE raw_employees_data_pipe
+AUTO_INGEST = TRUE
+AS
+COPY INTO ecomproject.sales.employees_raw 
+FROM @external_stages
+ON_ERROR=CONTINUE
+FILE_FORMAT = (FORMAT_NAME = 'csv_format_employees');
+
+desc pipe  raw_employees_data_pipe
+
+SELECT SYSTEM$PIPE_STATUS('raw_employees_data_pipe'
+
+ SELECT SYSTEM$PIPE_STATUS('raw_employees_data_pipe');
+
+
+---------------------------------------------------------------------------------
+
+//Create Stream
+
+CREATE OR REPLACE STREAM ecomproject.sales.raw_employees_data_streams
+ON TABLE ecomproject.sales.employees_raw
+SHOW_INITIAL_ROWS = TRUE;
+
+
+----------------------------------------------------------------------------------
+
+
+//Create Silver Tables
+
+CREATE OR REPLACE TABLE ecomproject.sales.employees_silver
+( EMPID INT,
+  EMPNAME VARCHAR(30),
+  SALARY FLOAT,
+  AGE INT,
+  DEPT VARCHAR(15),
+  LOCATION VARCHAR(20) 
+);
+
+
+-----------------------------------------------------------------------------------
+// Task – Incremental loading
+
+
+// Consume all changes from stream and merge into Silver table
+
+CREATE OR REPLACE TASK ecomproject.sales.task_incremental_load
+WAREHOUSE = compute_wh
+SCHEDULE = '1 MINUTES'
+//SCHEDULE = 'USING CRON 0 2 * * * UTC'
+WHEN
+  SYSTEM$STREAM_HAS_DATA('ecomproject.sales.raw_employees_data_streams')
+AS
+MERGE INTO ecomproject.sales.employees_silver T
+USING  ecomproject.sales.raw_employees_data_streams S
+	ON T.EMPID = S.EMPID
+WHEN MATCHED                        -- DELETE condition
+    AND S.METADATA$ACTION ='DELETE' 
+    AND S.METADATA$ISUPDATE = 'FALSE'
+    THEN DELETE                   
+WHEN MATCHED                        -- UPDATE condition
+    AND S.METADATA$ACTION ='INSERT' 
+    AND S.METADATA$ISUPDATE  = 'TRUE'       
+    THEN UPDATE 
+    SET T.EMPNAME = S.EMPNAME,
+		T.SALARY = S.SALARY,
+		T.AGE = S.AGE,
+		T.DEPT = S.DEPT,
+		T.LOCATION = S.LOCATION		
+WHEN NOT MATCHED 					-- INSERT records
+    AND S.METADATA$ACTION ='INSERT'
+	AND S.METADATA$ISUPDATE  = 'FALSE'
+    THEN INSERT( EMPID, EMPNAME, SALARY, AGE, DEPT, LOCATION)
+	VALUES(S.EMPID, S.EMPNAME, S.SALARY, S.AGE, S.DEPT, S.LOCATION)
+;
+
+
+UPDATE ecomproject.sales.employees_silver
+SET SALARY=90000
+WHERE EMPID=1;
+
+
+-- ALTER task ecomproject.sales.task_incremental_load RESUME;
+-- ALTER task ecomproject.sales.task_incremental_load SUSPEND;
