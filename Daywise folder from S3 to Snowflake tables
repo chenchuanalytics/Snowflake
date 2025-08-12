@@ -1,0 +1,117 @@
+
+//Create Database & Schema
+
+CREATE DATABASE ecomproject;
+CREATE SCHEMA ecomproject.sales;
+
+--------------------------------------------------------------------------
+
+CREATE OR REPLACE TABLE CUSTOMER  (
+    ID INT,
+    Name STRING,
+    Age INT,
+    Address STRING,
+    Phoneno INT,
+    joiningdate DATE,
+    Runby STRING
+);
+
+-------------------------------------------------------------------------------------------------
+
+//Create File Format
+
+CREATE OR REPLACE FILE FORMAT CSVTYPE
+TYPE = 'CSV'
+FIELD_DELIMITER = ','
+SKIP_HEADER = 1
+FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+empty_field_as_null = TRUE
+NULL_IF = ('\\N', 'NULL', '')
+ENCODING = 'UTF8';
+-----------------------------------------------------------------------------
+
+//Create Storage Integration object
+
+CREATE OR REPLACE STORAGE INTEGRATION S3_integration
+TYPE = EXTERNAL_STAGE
+ENABLED=TRUE
+STORAGE_PROVIDER = 'S3'
+STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::311410995815:role/aws_s3_snowflake_intg'
+STORAGE_ALLOWED_LOCATIONS = ('s3://e-commerce-project-id-01/Bronze'); 
+------------------------------------------------------------------------------
+
+//Create External Stage object using storage integration object
+
+
+CREATE OR REPLACE STAGE ecomproject.sales.CUST_DYNAMIC_STAGE
+    STORAGE_INTEGRATION = S3_integration
+    URL = 's3://e-commerce-project-id-01/Bronze'
+    FILE_FORMAT = (FORMAT_NAME = 'CSVTYPE')
+    DIRECTORY = (ENABLE = TRUE);
+
+
+
+-------------------------------------------------------------------------------
+
+
+-- LIST @CUST_DYNAMIC_STAGE; 
+
+-- select to_char(current_date(),'DD')
+
+-- LIST @CUST_DYNAMIC_STAGE/2025/08/11/;
+
+------------------------------------------------------------------------------
+
+
+CREATE OR REPLACE PROCEDURE DYNAMIC_LOAD()
+RETURNS STRING
+LANGUAGE SQL
+AS
+$$
+BEGIN
+    -- Step 1: Get year, month & date from current date (adjust if you want yesterday's file)
+    LET var_year  := TO_CHAR(CURRENT_DATE(), 'YYYY');
+    LET var_month := TO_CHAR(CURRENT_DATE(), 'MM');
+    LET var_day   := TO_CHAR(CURRENT_DATE(), 'DD');
+
+    -- Step 2: Build S3 folder path relative to stage (NO leading slash)
+    LET var_full_s3_path := var_year || '/' || var_month || '/' || var_day || '/';
+
+    -- Step 3: Build COPY command
+    LET var_copy_statment := 'COPY INTO CUSTOMER ' ||
+                             'FROM @CUST_DYNAMIC_STAGE/' || var_full_s3_path || ' ' ||
+                             'FILE_FORMAT = (FORMAT_NAME = ''CSVTYPE'') ' ||
+                             'ON_ERROR = ''CONTINUE'';';
+
+    -- Step 4: Execute
+    EXECUTE IMMEDIATE :var_copy_statment;
+
+    -- Step 5: Return
+    RETURN 'Executed SQL: ' || var_copy_statment;
+END;
+$$;
+
+
+CALL DYNAMIC_LOAD();
+
+
+Select * from CUSTOMER ;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+-----------------------------------------------------------------------------------------------------------------
+
