@@ -1,0 +1,186 @@
+SCD Type-II implementation using Streams
+-----------------------------------------
+
+CREATE DATABASE IF NOT EXISTS EMPLOYEE;
+CREATE SCHEMA IF NOT EXISTS STAGING;
+CREATE SCHEMA IF NOT EXISTS TARGET;
+
+-- Create a stage table
+CREATE TABLE STAGING.STG_EMPL
+( eid INTEGER not null,
+  ename VARCHAR(30),
+  dob DATE,
+  mail VARCHAR(50),
+  phone VARCHAR(20),
+  salary INTEGER,
+  dept VARCHAR(30),
+  loc VARCHAR(20),
+  PRIMARY KEY(eid)
+);
+
+-- Create the target table
+CREATE TABLE TARGET.EMPL_SCD2
+( emp_id INTEGER not null,
+  emp_name VARCHAR(50),
+  date_of_birth DATE,
+  email_id VARCHAR(50),
+  phone_number VARCHAR(20),
+  salary INTEGER,
+  department VARCHAR(30),
+  work_location VARCHAR(30),
+  effective_datetime TIMESTAMP,
+  expiry_datetime TIMESTAMP,
+  PRIMARY KEY(emp_id, effective_datetime)
+);
+
+-- Create a stream on stage table
+
+CREATE STREAM STAGING.STREAM_STG_EMPL_U ON TABLE STAGING.STG_EMPL;  --Updates
+CREATE STREAM STAGING.STREAM_STG_EMPL_I ON TABLE STAGING.STG_EMPL;   --Insert
+
+
+
+-- Create a prcedure to implement Type II logic
+
+CREATE OR REPLACE PROCEDURE EMP.TARGET.PROC_EMPL_SCD_TPYE2()
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS
+
+DECLARE 
+	cur_ts TIMESTAMP;
+	
+BEGIN
+	cur_ts := CURRENT_TIMESTAMP();
+	
+	--Expire old records and insert new records
+	MERGE INTO TARGET.EMPL_SCD2 TGT
+	USING STAGING.STREAM_STG_EMPL_U STR
+	ON TGT.emp_id = STR.eid
+	AND TGT.expiry_datetime is NULL
+	
+	WHEN MATCHED
+	  AND STR.METADATA$ACTION = 'DELETE'
+	  AND STR.METADATA$ISUPDATE = 'TRUE'
+	THEN
+	  UPDATE SET TGT.expiry_datetime = :cur_ts
+	  
+	WHEN NOT MATCHED THEN
+	  INSERT(emp_id, emp_name, date_of_birth, email_id, phone_number, salary, 
+      department, work_location, effective_datetime, expiry_datetime)
+	  VALUES(STR.eid, STR.ename, STR.dob, STR.mail, STR.phone, STR.salary, 
+      STR.dept, STR.loc, :cur_ts, null)
+	;
+	
+	--Insert the new version of old records
+	INSERT INTO TARGET.EMPL_SCD2
+	(emp_id, emp_name, date_of_birth, email_id, phone_number, salary, department, 
+    work_location, effective_datetime, expiry_datetime)
+	SELECT eid, ename, dob, mail, phone, salary, dept, loc, :cur_ts, null
+	FROM STAGING.STREAM_STG_EMPL_I
+	WHERE METADATA$ACTION = 'INSERT'
+	  AND METADATA$ISUPDATE = 'TRUE'
+	;
+	
+	RETURN 'Procedure Completed Successfully';
+	
+END;
+
+-- Schedule the procedure 
+
+CREATE OR REPLACE TASK TARGET.TASK_EMPL_DATA_LOAD2
+    SCHEDULE = '1 MINUTES'
+    WHEN SYSTEM$STREAM_HAS_DATA('STAGING.STREAM_STG_EMPL_U')
+AS
+CALL EMP.TARGET.PROC_EMPL_SCD_TPYE2();
+
+// Start the task
+ALTER TASK TARGET.TASK_EMPL_DATA_LOAD2 RESUME;
+
+
+-- Data load into stage table
+
+
+INSERT INTO STAGING.STG_EMPL VALUES
+(1, 'Anil Reddy', '1994-10-19', 'anil.reddy@gmail.com','147579865', 10000, 'Data Engineer', 'Bangalore'),
+(2, 'Arun Kumar', '1984-04-28', 'arun1993@yahoo.com','123456845', 20000, 'IT', 'Hyderabad'),
+(3, 'Pradeep Saho', '1996-08-14', 'pradeep.saho@outlook.com','23198765', 59000, 'Sales', 'Chennai'),
+(4, 'Arif khan', '1987-11-20', 'arif_khan@gmail.com','1012873465', 45500, 'IT', 'Bangalore');
+
+
+
+-- Observe the Streams now with change capture
+SELECT * FROM STAGING.STREAM_STG_EMPL_U;
+SELECT * FROM STAGING.STREAM_STG_EMPL_I;
+
+-- After 1st run
+-- Verify the data in Target table
+SELECT * FROM TARGET.EMPL_SCD2;
+
+-- Observe the Streams now after consuming the changes both get truncated
+SELECT * FROM STAGING.STREAM_STG_EMPL_U;
+SELECT * FROM STAGING.STREAM_STG_EMPL_I;
+
+-------------------------------------------
+-- Make changes to the Stage table (Assume it is truncate and load with new and updated records)
+
+
+-- New employee
+INSERT INTO STAGING.STG_EMPL VALUES
+(5, 'Vishal kaushal', '1990-10-04', 'vishalkaushal@gmail.com', '3846647382', 58000, 'IT', 'Pune');
+
+
+-- Update existing employee
+UPDATE STAGING.STG_EMPL SET phone = '5354565758' WHERE eid = 2;
+
+
+-- Observe the Streams now with change capture
+SELECT * FROM STAGING.STREAM_STG_EMPL_U;
+SELECT * FROM STAGING.STREAM_STG_EMPL_I;
+
+-- After 2 minutes (task will be running for every 2 mins)
+-- Verify the data in Target table
+SELECT * FROM TARGET.EMPL_SCD2;
+
+-- Observe the Streams now after consuming the changes
+SELECT * FROM STAGING.STREAM_STG_EMPL_U;
+SELECT * FROM STAGING.STREAM_STG_EMPL_I;
+
+-------------------------------------------
+-- One more time Make changes to the Stage table (Assume it is truncate and load with new and updated records)
+
+
+-- Another new employee
+INSERT INTO STAGING.STG_EMPL VALUES
+(6, 'Shushma V', '1998-05-14', 'vshushma92@gmail.com', '56239087651', 63500, 'IT', 'Chennai');
+
+-- Multiple updates
+UPDATE STAGING.STG_EMPL SET salary = 65000 WHERE eid = 2;
+UPDATE STAGING.STG_EMPL SET phone = '3434212123', loc = 'Mumbai' WHERE eid = 4;
+
+
+-- Observe the Streams now with change capture
+SELECT * FROM STAGING.STREAM_STG_EMPL_U;
+SELECT * FROM STAGING.STREAM_STG_EMPL_I;
+
+-- After 2 minutes (task will be running for every 2 mins)
+-- Verify the data in Target table
+SELECT * FROM TARGET.EMPL_SCD2;
+
+-- Observe the Streams now after consuming the changes
+SELECT * FROM STAGING.STREAM_STG_EMPL_U;
+SELECT * FROM STAGING.STREAM_STG_EMPL_I;
+
+--------------
+-- Stop or drop the task, otherwise all your free credits will be consumed
+
+
+ALTER TASK TARGET.TASK_EMPL_DATA_LOAD2 SUSPEND;
+
+
+SELECT *
+FROM TARGET.EMPL_SCD2
+WHERE expiry_datetime IS NULL
+order by emp_id;
+
