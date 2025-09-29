@@ -1,0 +1,34 @@
+CREATE or replace TABLE PART_DATA
+(
+
+P_PARTKEY int,	P_NAME varchar,	P_MFGR varchar,	P_BRAND	varchar,
+P_TYPE varchar,	P_SIZE int,	P_CONTAINER varchar, P_RETAILPRICE float,P_COMMENT varchar
+);
+
+select * from PART_DATA;
+
+select * from PART.csv.gz;
+
+list @stage_csv;
+
+
+COPY INTO PART_DATA
+FROM @stage_csv/PART.csv.gz
+validation_mode = return_all_errors;
+
+COPY INTO PART_DATA
+FROM @stage_csv
+ON_ERROR = ABORT_STATEMENT;
+
+COPY INTO PART_DATA
+FROM @stage_csv/PART.csv.gz
+FORCE = TRUE;
+
+
+CREATE NOTIFICATION INTEGRATION email
+enabled =true
+Type = QUEUE
+NOTIFICATION_PROVIDER = AWS_SNS
+DIRECTION= OUTBOUND
+AWS_SNS_TOPIC_ARN='arn:aws:sns:us-west-2:311410995815:SnowPipeAlert'
+AWS_SN_ROLE_ARN = 'arn:aws:iam::311410995815:role/Anil_s3_full_acess'
