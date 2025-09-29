@@ -1,0 +1,142 @@
+//Craete a gold Schema
+CREATE SCHEMA ecomproject.gold;
+ USE SCHEMA gold;
+ 
+
+-- 1. Materialized View: Sales Summary by Region and Category
+CREATE OR REPLACE MATERIALIZED VIEW sales_summary_mv AS
+SELECT 
+    Region,
+    Category,
+    SUM(Sales) AS total_sales,
+    SUM(Profit) AS total_profit
+FROM ecomproject.sales.superstore_orders_silver
+GROUP BY Region, Category;
+
+select * from ecomproject.gold.sales_summary_mv ;
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- 2. View: Top Products by Sales
+CREATE OR REPLACE VIEW top_products_by_sales AS
+SELECT 
+    Product_Name,
+    Category,
+    Sub_Category,
+    SUM(Sales) AS total_sales,
+    SUM(Profit) AS total_profit
+FROM ecomproject.sales.superstore_orders_silver
+GROUP BY Product_Name, Category, Sub_Category
+ORDER BY total_sales DESC
+LIMIT 20;
+--------------------------------------------------------------------------
+-- 3. View: Sales by Region and Category
+CREATE OR REPLACE VIEW sales_by_region_category AS
+SELECT 
+    Region,
+    Category,
+    total_sales,
+    total_profit
+FROM sales_summary_mv;
+
+------------------------------------------------------------------------------------------------------------------------
+-- 4. View: Monthly Sales Trends
+CREATE OR REPLACE VIEW monthly_sales_trends AS
+SELECT 
+    DATE_TRUNC('MONTH', Order_Date) AS month,
+    SUM(Sales) AS total_sales,
+    SUM(Profit) AS total_profit,
+    COUNT(DISTINCT Order_ID) AS orders_count
+FROM ecomproject.sales.superstore_orders_silver
+GROUP BY month
+ORDER BY month;
+---------------------------------------------------------------------------------------------
+-- 5. View: High Discount, Low Profit Orders
+CREATE OR REPLACE VIEW high_discount_low_profit_orders AS
+SELECT 
+    Order_ID,
+    Product_Name,
+    Discount,
+    Sales,
+    Profit
+FROM ecomproject.sales.superstore_orders_silver
+WHERE Discount >= 0.3 AND Profit < 0
+ORDER BY Discount DESC, Profit ASC;
+---------------------------------------------------------------------------------------------------
+-- 6. View: Customer Sales Summary
+CREATE OR REPLACE VIEW customer_sales_summary AS
+SELECT 
+    Segment,
+    Region,
+    COUNT(DISTINCT Customer_ID) AS total_customers,
+    SUM(Sales) AS total_sales,
+    SUM(Profit) AS total_profit
+FROM ecomproject.sales.superstore_orders_silver
+GROUP BY Segment, Region;
+------------------------------------------------------------------------------------------------------------
+
+
+-------------------------------------------------------------------------------------------------------------
+//Dynamic Masking
+
+CREATE ROLE SALES_ANALYST;
+CREATE ROLE SALES_ADMIN;
+
+GRANT ROLE SALES_ANALYST TO USER KICCHA;
+GRANT ROLE SALES_ADMIN TO USER KICCHA;
+
+//CREATE SCHEMA MYPOLICIES ;
+
+
+GRANT USAGE ON DATABASE ECOMPROJECT TO ROLE sales_analyst;
+GRANT USAGE ON SCHEMA ECOMPROJECT.SALES TO ROLE sales_analyst;
+GRANT USAGE ON SCHEMA ECOMPROJECT.gold TO ROLE sales_analyst;
+GRANT SELECT ON TABLE ecomproject.sales.superstore_orders_raw TO ROLE sales_analyst;
+GRANT SELECT ON TABLE ecomproject.SALES.superstore_orders_silver TO ROLE sales_admin;
+GRANT SELECT ON ALL VIEWS IN SCHEMA ECOMPROJECT.GOLD TO ROLE SALES_ANALYST;
+
+
+GRANT USAGE ON DATABASE ECOMPROJECT TO ROLE sales_admin;
+GRANT USAGE ON SCHEMA ECOMPROJECT.SALES TO ROLE sales_admin;
+GRANT USAGE ON SCHEMA ECOMPROJECT.GOLD TO ROLE sales_admin;
+GRANT SELECT ON TABLE ecomproject.sales.superstore_orders_raw TO ROLE sales_admin;
+GRANT SELECT ON TABLE ecomproject.SALES.superstore_orders_silver TO ROLE sales_admin;
+GRANT SELECT ON ALL VIEWS IN SCHEMA ECOMPROJECT.GOLD TO ROLE SALES_ADMIN;
+
+
+
+ 
+    
+CREATE OR REPLACE MASKING POLICY profit_mask_policy
+    as (val float) returns float->
+CASE WHEN CURRENT_ROLE() in ('SALES_ADMIN') THEN val
+    ELSE NULL
+    END;
+
+ALTER TABLE ecomproject.sales.superstore_orders_raw
+MODIFY COLUMN Profit SET MASKING POLICY profit_mask_policy;
+
+-------------------------------------------------------------------------------------------------------------
+
+-- SHOW MASKING POLICIES;
+
+-- select * from ecomproject.sales.superstore_orders_silver 
+-- select * from ecomproject.sales.superstore_orders_raw;
+
+-- SHOW TABLES IN SCHEMA ECOMPROJECT.SALES;
+
+
+
+-- -- ALTER TABLE MYPOLICIES.SALES
+-- -- MODIFY COLUMN PROFIT
+-- -- UNSET MASKING POLICY;  
+
+-- ALTER TABLE ecomproject.sales.superstore_orders_raw
+-- MODIFY COLUMN Profit UNSET MASKING POLICY;
+
+    
+-- --DROP MASKING POLICY  ECOMPROJECT.MYPOLICIES.PROFIT_MASK_POLICY;
+
+
+-- DESC TABLE ecomproject.sales.superstore_orders_raw;
+
+-- GRANT USAGE ON WAREHOUSE compute_wh TO ROLE SALES_ADMIN;
+
