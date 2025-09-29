@@ -1,0 +1,273 @@
+show stages;
+
+
+
+
+
+CREATE FILE FORMAT CSVTYPE 
+  TYPE = 'CSV'
+  FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+  --SKIP_HEADER = 1;
+
+
+
+--CREATING INTERNAL NAMED STAGE
+
+CREATE STAGE stage_csv
+FILE_FORMAT ='CSVTYPE';
+
+show stages;
+
+LIST @STAGE_CSV
+
+
+snowsql -a <accountname> -u<username>
+
+-d <database>
+-s <schema>
+
+list @stage_csv;
+
+list @copied_stage;
+
+CREATE or replace TABLE PART_DATA
+(
+
+P_PARTKEY  int,	P_NAME varchar,	P_MFGR varchar,	P_BRAND	 varchar,
+P_TYPE varchar,	P_SIZE int,	P_CONTAINER varchar,	P_RETAILPRICE	float,P_COMMENT varchar
+
+);
+
+copy into PART_DATA
+from @stage_csv
+ON_ERROR =abort_statement;
+
+
+
+USE DATABASE WEATHER_SOURCE_LLC_FROSTBYTE;
+USE SCHEMA WEATHER_SOURCE_LLC_FROSTBYTE.INFORMATION_SCHEMA;
+
+show tables;
+
+SHOW ROLES;
+
+SELECT * FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY
+LIMIT 10;
+
+SHOW WAREHOUSES;
+
+
+SELECT COUNT(*) FROM CUSTOMER.RAWLAYER.ASSIGNMENT2;
+
+SELECT  COUNT(*)  FROM   CUSTOMER.RAWLAYER.ASSIGNMENT2;
+
+SELECT COUNT(*) FROM ASSIGNMENT2 WHERE CURRENT_TIMESTAMP IS NOT NULL;
+
+
+
+
+select $1,$2,$3,$4 from @stage_csv/Customerdata.csv
+limit 5;
+
+select * from @stage_csv/Customerdata.csv
+limit 5;
+
+
+
+select * from part_data;
+
+--How to copy data to local machine
+
+create or replace stage unloadstage;
+
+
+--You can not only copy data into the table from a stage but also you can copy data into the stage from table.
+
+COPY INTO @UNLOADSTAGE
+FROM PART_DATA;
+
+
+
+list @unloadstage;
+
+
+get @unloadstage file://C:\Users\USER\Downloads\PART.csv;
+
+
+
+
+create or replace table customer (custid int , name varchar(100), Address varchar);
+
+
+DESCRIBE TABLE CUSTOMER;
+
+
+SHOW TABLES;
+
+
+create or replace table customer (custid int primary key , name varchar(100), Address varchar, AGE INT NOT NULL);
+
+INSERT INTO CUSTOMER VALUES (100,'ANIL','INDIA',NULL);
+
+SELECT * FROM CUSTOMER;
+
+
+
+
+CREATE TRANSIENT TABLE NATION (nationid int, nationname varchar);
+
+CREATE TEMPORARY TABLE SALES (id int)
+
+
+
+
+Alter table customer 
+set data_retention_time_in_days = 30;
+
+
+CREATE DYNAMIC TABLE PRODUCTS
+TARGET_LAG = '2 MINUTES'
+WAREHOUSE = 'COMPUTE_WH'
+AS
+SELECT * FROM NATION;
+
+SHOW SCHEMAS;
+
+
+ALTER SCHEMA RAWLAYER
+set data_retention_time_in_days = 30;
+
+SHOW TABLES;
+
+
+
+
+
+CREATE NOTIFICATION INTEGRATION email
+enabled =true
+Type = QUEUE
+NOTIFICATION_PROVIDER = AWS_SNS
+DIRECTION= OUTBOUND
+AWS_SNS_TOPIC_ARN='arn:aws:sns:us-west-2:311410995815:SnowPipeAlert'
+AWS_SN_ROLE_ARN = 'arn:aws:iam::311410995815:role/Anil_s3_full_acess'
+
+
+
+Select SYSTEM$PIPE_STATUS('AWSPIPE')
+
+
+
+
+SHOW PIPES;
+
+
+CREATE OR REPLACE PIPE AWSPIPE
+AS
+copy into Address_data
+from @stage_csv
+
+
+Select SYSTEM$PIPE_STATUS('AWSPIPE')
+
+ALTER PIPE AWSPIPE
+SET ERROR_INTEGRATION = email;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
