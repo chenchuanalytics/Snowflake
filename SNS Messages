@@ -1,0 +1,68 @@
+CREATE NOTIFICATION INTEGRATION EMAIL
+enabled =true
+Type = QUEUE
+NOTIFICATION_PROVIDER = AWS_SNS
+DIRECTION= OUTBOUND
+AWS_SNS_TOPIC_ARN='arn:aws:sns:us-west-2:311410995815:SnowPipeAlert'
+AWS_SNS_ROLE_ARN = 'arn:aws:iam::311410995815:role/Anil_s3_full_acess';
+
+
+CREATE NOTIFICATION INTEGRATION email
+  TYPE = EMAIL
+  ENABLED = TRUE
+  ALLOWED_RECIPIENTS = ('anil@chenchuanalytics.com')
+
+
+DESC INTEGRATION email;
+
+ALTER PIPE AWSPIPE
+SET ERROR_INTEGRATION = email;
+
+Select SYSTEM$PIPE_STATUS('AWSPIPE')
+
+SHOW PIPES;
+
+ALTER PIPE AWSPIPE
+SET ERROR_INTEGRATION = email;
+
+
+
+
+CREATE NOTIFICATION INTEGRATION email
+  TYPE = EMAIL
+  ENABLED = TRUE
+  ALLOWED_RECIPIENTS = ('anil@chenchuanalytics.com');
+
+
+SHOW INTEGRATIONS;
+
+
+COPY INTO Customer.Rawlayer.customer_data
+    FROM @Customer.external_stages.stg_azure_cont;
+
+
+CALL SYSTEM$SEND_EMAIL(
+  'EMAIL',
+  '{
+    "personalizations": [ { "to": [ { "email": "anil@chenchuanalytics.com" } ] } ],
+    "subject": "Test Email",
+    "content": [ { "type": "text/plain", "value": "Test" } ]
+  }'
+);
+
+
+CALL SYSTEM$SEND_EMAIL(
+  'EMAIL',   -- (or the name of your email integration, like 'MY_EMAIL_INT')
+  '{
+    "personalizations": [
+      { "to": [ { "email": "anil@chenchuanalytics.com" } ] }
+    ],
+    "subject": "Hi",
+    "content": [ { "type": "text/plain", "value": "please ignore this is a test email" } ]
+  }'
+);
+
+
+
+
+
