@@ -1,0 +1,75 @@
+-- Create a storage integration object
+CREATE STORAGE INTEGRATION snow_azure_int
+  TYPE = EXTERNAL_STAGE
+  STORAGE_PROVIDER = AZURE
+  ENABLED = TRUE
+  AZURE_TENANT_ID = '40baa257-ff3d-4498-a9e9-4e571ed0f313'
+  STORAGE_ALLOWED_LOCATIONS = ('azure://gen2sstorage19.blob.core.windows.net/landing');
+  
+-- Describe integration object
+DESC STORAGE INTEGRATION snow_azure_int;
+
+-----------------------------------
+// Create database and schema
+CREATE DATABASE IF NOT EXISTS Customer ;
+CREATE SCHEMA IF NOT EXISTS Customer.Rawlayer;
+CREATE SCHEMA IF NOT EXISTS Customer.external_stages;
+
+// Create file format object
+CREATE OR REPLACE file format Customer.Rawlayer.csv_fileformat
+    type = csv
+    field_delimiter = '|'
+    skip_header = 1
+    empty_field_as_null = TRUE;    
+    
+// Create stage object with integration object & file format object
+CREATE OR REPLACE STAGE Customer.external_stages.stg_azure_cont
+    URL = 'azure://gen2sstorage19.blob.core.windows.net/landing'
+    STORAGE_INTEGRATION = snow_azure_int
+    FILE_FORMAT = Customer.Rawlayer.csv_fileformat ;
+
+
+//Listing files under your azure containers
+list @Customer.external_stages.stg_azure_cont;
+
+
+// Create a table first
+CREATE OR REPLACE TABLE Customer.Rawlayer.customer_data 
+(
+   ID NUMBER,
+   Name STRING,
+   Age string,
+   Address STRING,
+   Phoneno STRING,
+   joiningdate string,
+   Runby STRING
+); 
+
+// Use Copy command to load the files
+COPY INTO Customer.Rawlayer.customer_data
+    FROM @Customer.external_stages.stg_azure_cont;
+    //PATTERN = '.*Customerdata.*'
+  // ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE;  
+
+   COPY INTO Customer.RawLayer.customer_data
+FROM @Customer.external_stages.stg_azure_cont
+FILE_FORMAT = (TYPE = 'CSV' ERROR_ON_COLUMN_COUNT_MISMATCH=FALSE);
+
+ 
+//Validate the data
+
+SELECT * FROM Customer.Rawlayer.customer_data;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
