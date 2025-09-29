@@ -1,0 +1,350 @@
+
+//Create Database & Schema
+
+CREATE DATABASE ecomproject;
+CREATE SCHEMA ecomproject.sales;
+
+--------------------------------------------------------------------------
+
+//Create File Format
+
+CREATE OR REPLACE FILE FORMAT csv_format_superstore
+TYPE = 'CSV'
+FIELD_DELIMITER = ','
+SKIP_HEADER = 1
+FIELD_OPTIONALLY_ENCLOSED_BY = '"'
+empty_field_as_null = TRUE
+NULL_IF = ('\\N', 'NULL', '')
+ENCODING = 'UTF8';
+-----------------------------------------------------------------------------
+
+//Create Storage Integration object
+
+CREATE OR REPLACE STORAGE INTEGRATION S3_integration
+TYPE = EXTERNAL_STAGE
+ENABLED=TRUE
+STORAGE_PROVIDER = 'S3'
+STORAGE_AWS_ROLE_ARN = 'arn:aws:iam::311410995815:role/aws_s3_snowflake_intg'
+STORAGE_ALLOWED_LOCATIONS = ('s3://e-commerce-project-id-01/Bronze','s3://e-commerce-project-id-01/silver','s3://e-commerce-project-id-01/Gold');  
+------------------------------------------------------------------------------
+
+//Create External Stage object using storage integration object
+
+CREATE OR REPLACE STAGE external_stages
+STORAGE_INTEGRATION = S3_integration
+URL = 's3://e-commerce-project-id-01/Bronze'
+FILE_FORMAT = csv_format_superstore;
+----------------------------------------------------------------------------
+
+list @external_stages;
+
+
+LIST @ecomproject.sales.external_stages;
+
+-------------------------------------------------------------------------
+
+//Create Raw/Bronze Table 
+
+CREATE OR REPLACE TRANSIENT TABLE ecomproject.sales.superstore_orders_raw (
+    Row_ID INT,
+    Order_ID STRING,
+    Order_Date DATE,
+    Ship_Date DATE,
+    Ship_Mode STRING,
+    Customer_ID STRING,
+    Customer_Name STRING,
+    Segment STRING,
+    Country STRING,
+    City STRING,
+    State STRING,
+    Postal_Code STRING,
+    Region STRING,
+    Product_ID STRING,
+    Category STRING,
+    Sub_Category STRING,
+    Product_Name STRING,
+    Sales FLOAT,
+    Quantity INT,
+    Discount FLOAT,
+    Profit FLOAT
+);
+
+------------------------------------------------------------------------------------
+//Create SnowPipe for Auto loading
+
+CREATE OR REPLACE PIPE raw_sales_data_pipe
+AUTO_INGEST = TRUE
+AS
+COPY INTO ecomproject.sales.superstore_orders_raw 
+FROM @external_stages
+ON_ERROR=CONTINUE
+FILE_FORMAT = (FORMAT_NAME = 'csv_format_superstore');
+
+desc pipe  raw_sales_data_pipe
+
+---------------------------------------------------------------------------------
+
+//Create Stream
+
+CREATE OR REPLACE STREAM ecomproject.sales.raw_sales_data_streams
+ON TABLE ecomproject.sales.superstore_orders_raw
+SHOW_INITIAL_ROWS = TRUE;
+----------------------------------------------------------------------------------
+
+
+//Create Silver Tables
+
+
+CREATE OR REPLACE TABLE ecomproject.sales.superstore_orders_silver (
+    Row_ID INT,
+    Order_ID STRING,
+    Order_Date DATE,
+    Ship_Date DATE,
+    Ship_Mode STRING,
+    Customer_ID STRING,
+    Customer_Name STRING,
+    Segment STRING,
+    Country STRING,
+    City STRING,
+    State STRING,
+    Postal_Code STRING,
+    Region STRING,
+    Product_ID STRING,
+    Category STRING,
+    Sub_Category STRING,
+    Product_Name STRING,
+    Sales FLOAT,
+    Quantity INT,
+    Discount FLOAT,
+    Profit FLOAT,
+    start_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
+    end_date TIMESTAMP,
+    is_current BOOLEAN DEFAULT TRUE
+);
+
+-----------------------------------------------------------------------------------
+//SCD Type 2 Task – UPSERT with Historical Tracking
+
+CREATE OR REPLACE TASK ecomproject.sales.task_scd_type2_merge
+WAREHOUSE = compute_wh
+SCHEDULE = '100 Hours'
+//SCHEDULE = 'USING CRON 0 2 * * * UTC'
+WHEN
+  SYSTEM$STREAM_HAS_DATA('ecomproject.sales.raw_sales_data_streams')
+AS
+MERGE INTO ecomproject.sales.superstore_orders_silver AS target
+USING (
+    SELECT * FROM ecomproject.sales.raw_sales_data_streams
+) AS src
+ON target.ROW_ID = src.ROW_ID AND target.is_current = TRUE
+
+WHEN MATCHED AND (
+    target.Order_Date != src.Order_Date OR
+    target.Ship_Date != src.Ship_Date OR
+    target.Ship_Mode != src.Ship_Mode OR
+    target.Customer_ID != src.Customer_ID OR
+    target.Customer_Name != src.Customer_Name OR
+    target.Segment != src.Segment OR
+    target.Country != src.Country OR
+    target.City != src.City OR
+    target.State != src.State OR
+    target.Postal_Code != src.Postal_Code OR
+    target.Region != src.Region OR
+    target.Product_ID != src.Product_ID OR
+    target.Category != src.Category OR
+    target.Sub_Category != src.Sub_Category OR
+    target.Product_Name != src.Product_Name OR
+    target.Sales != src.Sales OR
+    target.Quantity != src.Quantity OR
+    target.Discount != src.Discount OR
+    target.PROFIT != src.PROFIT
+) THEN
+    UPDATE SET 
+        target.is_current = FALSE,
+        target.end_date = CURRENT_TIMESTAMP()
+
+WHEN NOT MATCHED THEN
+    INSERT (
+        ROW_ID, Order_ID, Order_Date, Ship_Date, Ship_Mode,
+        Customer_ID, Customer_Name, Segment, Country, City,
+        State, Postal_Code, Region, Product_ID, Category,
+        Sub_Category, Product_Name, Sales, Quantity,
+        Discount, Profit, start_date, end_date, is_current
+    )
+    VALUES (
+        src.ROW_ID, src.Order_ID, src.Order_Date, src.Ship_Date, src.Ship_Mode,
+        src.Customer_ID, src.Customer_Name, src.Segment, src.Country, src.City,
+        src.State, src.Postal_Code, src.Region, src.Product_ID, src.Category,
+        src.Sub_Category, src.Product_Name, src.Sales, src.Quantity,
+        src.Discount, src.Profit, CURRENT_TIMESTAMP(), NULL, TRUE
+    );
+-----------------------------------------------------------------------------------------------------------------------------
+
+-----------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------
+------------------------------------------------------------------------------------
+//Testing Code
+
+-- SELECT * FROM ecomproject.sales.raw_sales_data_streams;
+
+-- SELECT SYSTEM$STREAM_HAS_DATA('ecomproject.sales.raw_sales_data_stream');
+
+-- SHOW TASKS LIKE 'task_scd_type2_merge' IN SCHEMA ecomproject.sales;
+
+-- SELECT *
+-- FROM TABLE(information_schema.task_history())
+-- WHERE name = 'TASK_SCD_TYPE2_MERGE'
+-- ORDER BY scheduled_time DESC;
+-------------------------------------------------------------------------------
+ select * from ecomproject.sales.superstore_orders_silver 
+ select * from ecomproject.sales.superstore_orders_raw;
+SELECT * FROM ecomproject.sales.raw_sales_data_streams;
+
+ TRUNCATE TABLE ecomproject.sales.superstore_orders_raw;
+ TRUNCATE TABLE ecomproject.sales.superstore_orders_silver;
+
+ALTER STREAM ecomproject.sales.raw_sales_data_stream REFRESH;
+
+Alter TASK ecomproject.sales.task_scd_type2_merge RESUME;
+
+select * from ecomproject.sales.superstore_orders_raw
+where Row_ID = 5634
+
+ select * from ecomproject.sales.superstore_orders_silver 
+ where Row_ID = 5634
+----------------------------------------------------------------------------
+-- INSERT INTO ecomproject.sales.superstore_orders_silver
+-- SELECT
+--   Row_ID, Order_ID, Order_Date, Ship_Date, Ship_Mode,
+--   Customer_ID, Customer_Name, Segment, Country, City,
+--   State, Postal_Code, Region, Product_ID, Category,
+--   Sub_Category, Product_Name, Sales, Quantity,
+--   Discount, Profit, CURRENT_TIMESTAMP(), NULL, TRUE
+-- FROM ecomproject.sales.superstore_orders_raw;
+-------------------------------------------------------------------------
+
+-- DROP STREAM IF EXISTS ecomproject.sales.raw_sales_data_stream;
+-- ALTER TABLE ecomproject.sales.superstore_orders_raw SET CHANGE_TRACKING = TRUE;
+
+-- UPDATE ecomproject.sales.superstore_orders_raw
+-- SET PROFIT = PROFIT + 100
+-- WHERE Row_ID = 5900;  -- Use a valid Row_ID
+-------------------------------------------------------------------------
+-- SELECT * FROM ecomproject.sales.superstore_orders_silver
+-- WHERE Row_ID = 5900;
+-- ---------------------------------------------------------------------------
+
+-- Check task status
+-- SHOW TASKS LIKE 'task_scd_type2_merge' IN SCHEMA ecomproject.sales;
+
+-- SELECT *
+-- FROM TABLE(information_schema.task_history())
+-- WHERE name = 'TASK_SCD_TYPE2_MERGE'
+-- ORDER BY scheduled_time DESC
+-- LIMIT 10;
+-------------------------------------------------------------------------------------------------------------
+
+-- SELECT 
+--     Region,
+--     Category,
+--     SUM(Sales) AS total_sales,
+--     SUM(Profit) AS total_profit
+-- FROM ecomproject.sales.superstore_orders_silver
+-- GROUP BY Region, Category;
+
+---------------------------------------------------------------------------------------------------------------------
+
+-- select * from ecomproject.sales.superstore_orders_raw;
+-- TRUNCATE TABLE ecomproject.sales.superstore_orders_raw;
+
+--------------------------------------------------------------------------------
+
+
+-- CREATE OR REPLACE TASK ecomproject.sales.task_scd_type2_merge
+-- WAREHOUSE = compute_wh
+-- SCHEDULE = '1 minute'
+-- WHEN
+--   SYSTEM$STREAM_HAS_DATA('ecomproject.sales.raw_sales_data_streams')
+-- AS
+-- MERGE INTO ecomproject.sales.superstore_orders_silver AS target
+-- USING (
+--     SELECT * FROM ecomproject.sales.raw_sales_data_streams
+-- ) AS src
+-- ON target.ROW_ID = src.ROW_ID AND target.is_current = TRUE
+
+-- WHEN MATCHED AND (
+--     target.Order_Date IS DISTINCT FROM src.Order_Date OR
+--     target.Ship_Date IS DISTINCT FROM src.Ship_Date OR
+--     target.Ship_Mode IS DISTINCT FROM src.Ship_Mode OR
+--     target.Customer_ID IS DISTINCT FROM src.Customer_ID OR
+--     target.Customer_Name IS DISTINCT FROM src.Customer_Name OR
+--     target.Segment IS DISTINCT FROM src.Segment OR
+--     target.Country IS DISTINCT FROM src.Country OR
+--     target.City IS DISTINCT FROM src.City OR
+--     target.State IS DISTINCT FROM src.State OR
+--     target.Postal_Code IS DISTINCT FROM src.Postal_Code OR
+--     target.Region IS DISTINCT FROM src.Region OR
+--     target.Product_ID IS DISTINCT FROM src.Product_ID OR
+--     target.Category IS DISTINCT FROM src.Category OR
+--     target.Sub_Category IS DISTINCT FROM src.Sub_Category OR
+--     target.Product_Name IS DISTINCT FROM src.Product_Name OR
+--     target.Sales IS DISTINCT FROM src.Sales OR
+--     target.Quantity IS DISTINCT FROM src.Quantity OR
+--     target.Discount IS DISTINCT FROM src.Discount OR
+--     target.Profit IS DISTINCT FROM src.Profit
+-- ) THEN
+--     UPDATE SET 
+--         target.is_current = FALSE,
+--         target.end_date = CURRENT_TIMESTAMP()
+
+-- WHEN NOT MATCHED THEN
+--     INSERT (
+--         ROW_ID, Order_ID, Order_Date, Ship_Date, Ship_Mode,
+--         Customer_ID, Customer_Name, Segment, Country, City,
+--         State, Postal_Code, Region, Product_ID, Category,
+--         Sub_Category, Product_Name, Sales, Quantity,
+--         Discount, Profit, start_date, end_date, is_current
+--     )
+--     VALUES (
+--         src.ROW_ID, src.Order_ID, src.Order_Date, src.Ship_Date, src.Ship_Mode,
+--         src.Customer_ID, src.Customer_Name, src.Segment, src.Country, src.City,
+--         src.State, src.Postal_Code, src.Region, src.Product_ID, src.Category,
+--         src.Sub_Category, src.Product_Name, src.Sales, src.Quantity,
+--         src.Discount, src.Profit, CURRENT_TIMESTAMP(), NULL, TRUE
+--     );
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+-- CREATE OR REPLACE TASK ecomproject.sales.task_scd_type2_merge
+-- WAREHOUSE = compute_wh
+-- SCHEDULE = '1 minute'
+-- WHEN SYSTEM$STREAM_HAS_DATA('ecomproject.sales.raw_sales_data_streams')
+-- AS
+-- BEGIN
+--     -- Step 1: Mark existing records as historical
+--     UPDATE ecomproject.sales.superstore_orders_silver 
+--     SET 
+--         is_current = FALSE,
+--         end_date = CURRENT_TIMESTAMP()
+--     WHERE ROW_ID IN (
+--         SELECT DISTINCT ROW_ID 
+--         FROM ecomproject.sales.raw_sales_data_streams
+--         WHERE METADATA$ACTION = 'INSERT'
+--     ) 
+--     AND is_current = TRUE;
+
+--     -- Step 2: Insert all new/updated records
+--     INSERT INTO ecomproject.sales.superstore_orders_silver (
+--         ROW_ID, Order_ID, Order_Date, Ship_Date, Ship_Mode,
+--         Customer_ID, Customer_Name, Segment, Country, City,
+--         State, Postal_Code, Region, Product_ID, Category,
+--         Sub_Category, Product_Name, Sales, Quantity,
+--         Discount, Profit, start_date, end_date, is_current
+--     )
+--     SELECT 
+--         ROW_ID, Order_ID, Order_Date, Ship_Date, Ship_Mode,
+--         Customer_ID, Customer_Name, Segment, Country, City,
+--         State, Postal_Code, Region, Product_ID, Category,
+--         Sub_Category, Product_Name, Sales, Quantity,
+--         Discount, Profit, CURRENT_TIMESTAMP(), NULL, TRUE
+--     FROM ecomproject.sales.raw_sales_data_streams
+--     WHERE METADATA$ACTION = 'INSERT';
+-- END;
